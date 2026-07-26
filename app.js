@@ -1,7 +1,6 @@
 'use strict';
 
 const DB_NAME = 'pdf-reader-db';
-const STORE = 'pdfs';
 const PREFS_KEY = 'reader:prefs';
 const PDFJS = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
@@ -14,12 +13,15 @@ const els = {
   loading: document.getElementById('loading'),
   progress: document.getElementById('progress-bar'),
   bookTitle: document.getElementById('book-title'),
-  welcome: document.getElementById('welcome'),
+  library: document.getElementById('library'),
+  bookList: document.getElementById('book-list'),
+  libEmpty: document.getElementById('lib-empty'),
   fontDown: document.getElementById('btn-font-down'),
   fontUp: document.getElementById('btn-font-up'),
   theme: document.getElementById('btn-theme'),
   mark: document.getElementById('btn-mark'),
   bookmarks: document.getElementById('btn-bookmarks'),
+  libraryBtn: document.getElementById('btn-library'),
   badge: document.getElementById('bookmark-badge'),
   drawer: document.getElementById('drawer'),
   overlay: document.getElementById('drawer-overlay'),
@@ -38,52 +40,126 @@ const TRASH = '<svg viewBox="0 0 24 24" class="ic"><path d="M4 7h16M9 7V5h6v2M6 
 let prefs = loadPrefs();
 let pageBlocks = [];
 let currentFileName = '';
+let storageOk = true;
 
 function loadPrefs() {
+  const def = { theme: 'light', fontSize: 19, currentBookId: null, books: {} };
   try {
-    return Object.assign({ theme: 'light', fontSize: 19, position: null, bookmarks: [] },
-      JSON.parse(localStorage.getItem(PREFS_KEY)) || {});
+    return Object.assign(def, JSON.parse(localStorage.getItem(PREFS_KEY)) || {});
   } catch (e) {
-    return { theme: 'light', fontSize: 19, position: null, bookmarks: [] };
+    return def;
   }
 }
 function savePrefs() {
   try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch (e) {}
 }
+function bookState(id) {
+  if (!prefs.books[id]) prefs.books[id] = { position: null, bookmarks: [] };
+  return prefs.books[id];
+}
 
 function openDB() {
   return new Promise((res, rej) => {
-    const r = indexedDB.open(DB_NAME, 1);
-    r.onupgradeneeded = () => r.result.createObjectStore(STORE);
+    const r = indexedDB.open(DB_NAME, 2);
+    r.onupgradeneeded = () => {
+      const db = r.result;
+      const tx = r.transaction;
+      if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('blobs')) db.createObjectStore('blobs', { keyPath: 'id' });
+      if (db.objectStoreNames.contains('pdfs')) {
+        const old = tx.objectStore('pdfs').get('current');
+        old.onsuccess = () => {
+          const rec = old.result;
+          if (rec && rec.buf) {
+            const id = 'legacy-' + ((rec.meta && rec.meta.savedAt) || Date.now());
+            tx.objectStore('meta').put({ id, name: (rec.meta && rec.meta.name) || 'Documento', addedAt: (rec.meta && rec.meta.savedAt) || Date.now() });
+            tx.objectStore('blobs').put({ id, buf: rec.buf });
+          }
+        };
+        db.deleteObjectStore('pdfs');
+      }
+    };
     r.onsuccess = () => res(r.result);
-    r.onerror = () => rej(r.error);
+    r.onerror = () => { storageOk = false; rej(r.error); };
   });
 }
-async function savePdf(buf, meta) {
+async function saveBook(id, name, buf) {
   try {
     const db = await openDB();
     await new Promise((res, rej) => {
-      const tx = db.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).put({ buf, meta }, 'current');
+      const tx = db.transaction(['meta', 'blobs'], 'readwrite');
+      tx.objectStore('meta').put({ id, name, addedAt: Date.now() });
+      tx.objectStore('blobs').put({ id, buf });
       tx.oncomplete = res;
       tx.onerror = () => rej(tx.error);
     });
-  } catch (e) { console.warn('IndexedDB no disponible, el PDF no se guardará.', e); }
+  } catch (e) { console.warn('IndexedDB no disponible, el libro no se guardará.', e); }
 }
-async function loadPdf() {
+async function listBooks() {
   try {
     const db = await openDB();
     return await new Promise((res, rej) => {
-      const tx = db.transaction(STORE, 'readonly');
-      const req = tx.objectStore(STORE).get('current');
+      const tx = db.transaction('meta', 'readonly');
+      const req = tx.objectStore('meta').getAll();
+      req.onsuccess = () => res((req.result || []).sort((a, b) => b.addedAt - a.addedAt));
+      req.onerror = () => rej(req.error);
+    });
+  } catch (e) { return []; }
+}
+async function getMeta(id) {
+  try {
+    const db = await openDB();
+    return await new Promise((res, rej) => {
+      const tx = db.transaction('meta', 'readonly');
+      const req = tx.objectStore('meta').get(id);
       req.onsuccess = () => res(req.result || null);
       req.onerror = () => rej(req.error);
     });
   } catch (e) { return null; }
 }
+async function getBlob(id) {
+  try {
+    const db = await openDB();
+    return await new Promise((res, rej) => {
+      const tx = db.transaction('blobs', 'readonly');
+      const req = tx.objectStore('blobs').get(id);
+      req.onsuccess = () => res(req.result || null);
+      req.onerror = () => rej(req.error);
+    });
+  } catch (e) { return null; }
+}
+async function deleteBook(id) {
+  try {
+    const db = await openDB();
+    await new Promise((res, rej) => {
+      const tx = db.transaction(['meta', 'blobs'], 'readwrite');
+      tx.objectStore('meta').delete(id);
+      tx.objectStore('blobs').delete(id);
+      tx.oncomplete = res;
+      tx.onerror = () => rej(tx.error);
+    });
+  } catch (e) {}
+}
 
 function escapeHtml(s) {
   return s.replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function showStorageWarning() {
+  els.libEmpty.textContent = 'No se pudo acceder al almacenamiento del navegador. Abre la página por http:// (no file://) para que los libros se guarden.';
+}
+
+let toastEl = null, toastTimer = null;
+function showToast(msg) {
+  if (!toastEl) {
+    toastEl = document.createElement('div');
+    toastEl.className = 'toast';
+    document.body.appendChild(toastEl);
+  }
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 1800);
 }
 
 function applyTheme() {
@@ -134,9 +210,9 @@ async function renderPdf(arrayBuffer, restore) {
       els.reader.appendChild(block);
       pageBlocks.push(block);
     }
-    els.welcome.classList.remove('show');
-    if (restore && prefs.position) {
-      requestAnimationFrame(() => restorePosition(prefs.position, 'auto'));
+    if (restore && prefs.currentBookId) {
+      const st = bookState(prefs.currentBookId);
+      if (st.position) requestAnimationFrame(() => restorePosition(st.position, 'auto'));
     }
     updateProgress();
   } catch (e) {
@@ -168,6 +244,7 @@ function restorePosition(pos, behavior) {
 }
 
 function updateProgress() {
+  if (els.reader.style.display === 'none') { els.progress.style.width = '0'; return; }
   const h = document.documentElement.scrollHeight - window.innerHeight;
   const p = h > 0 ? (window.scrollY / h) * 100 : 0;
   els.progress.style.width = Math.min(100, Math.max(0, p)) + '%';
@@ -179,15 +256,14 @@ function onScroll() {
   if (scrollTimer) return;
   scrollTimer = setTimeout(() => {
     scrollTimer = null;
-    if (pageBlocks.length) {
-      prefs.position = getPosition();
-      savePrefs();
-    }
+    persistNow();
   }, 400);
 }
 window.addEventListener('scroll', onScroll, { passive: true });
 function persistNow() {
-  if (pageBlocks.length) { prefs.position = getPosition(); savePrefs(); }
+  if (els.reader.style.display === 'none' || !pageBlocks.length || !prefs.currentBookId) return;
+  bookState(prefs.currentBookId).position = getPosition();
+  savePrefs();
 }
 window.addEventListener('beforeunload', persistNow);
 document.addEventListener('visibilitychange', () => { if (document.hidden) persistNow(); });
@@ -209,12 +285,14 @@ els.theme.addEventListener('click', () => {
 });
 
 function renderBookmarks() {
+  const st = prefs.currentBookId ? (prefs.books[prefs.currentBookId] || { bookmarks: [] }) : { bookmarks: [] };
+  const bms = st.bookmarks || [];
   const list = els.bookmarkList;
   list.innerHTML = '';
-  if (!prefs.bookmarks.length) {
+  if (!bms.length) {
     list.innerHTML = '<li class="empty">Aún no hay marcadores. Toca “Marcar” para guardar esta página.</li>';
   } else {
-    const sorted = [...prefs.bookmarks].sort((a, b) => a.page - b.page || a.ratio - b.ratio);
+    const sorted = [...bms].sort((a, b) => a.page - b.page || a.ratio - b.ratio);
     sorted.forEach(bm => {
       const li = document.createElement('li');
       li.className = 'bm-item';
@@ -223,7 +301,9 @@ function renderBookmarks() {
       jump.innerHTML = `<span class="bm-page">Página ${bm.page}</span>` +
         (bm.note ? `<span class="bm-note">${escapeHtml(bm.note)}</span>` : '');
       jump.addEventListener('click', () => {
-        restorePosition({ page: bm.page, ratio: bm.ratio }, 'smooth');
+        const go = () => restorePosition({ page: bm.page, ratio: bm.ratio }, 'smooth');
+        if (els.reader.style.display === 'none') openBook(prefs.currentBookId).then(go);
+        else go();
         closeDrawer();
       });
       const del = document.createElement('button');
@@ -232,7 +312,8 @@ function renderBookmarks() {
       del.title = 'Eliminar marcador';
       del.addEventListener('click', e => {
         e.stopPropagation();
-        prefs.bookmarks = prefs.bookmarks.filter(x => x.id !== bm.id);
+        const s = bookState(prefs.currentBookId);
+        s.bookmarks = s.bookmarks.filter(x => x.id !== bm.id);
         savePrefs();
         renderBookmarks();
       });
@@ -241,7 +322,7 @@ function renderBookmarks() {
       list.appendChild(li);
     });
   }
-  const n = prefs.bookmarks.length;
+  const n = bms.length;
   els.badge.textContent = n;
   els.badge.style.display = n ? 'flex' : 'none';
 }
@@ -260,11 +341,13 @@ els.drawerClose.addEventListener('click', closeDrawer);
 els.overlay.addEventListener('click', closeDrawer);
 
 els.mark.addEventListener('click', () => {
-  if (!pageBlocks.length) return;
+  if (els.reader.style.display === 'none' || !prefs.currentBookId) return;
   const pos = getPosition();
   const note = prompt('Nota para el marcador (opcional):', '');
   if (note === null) return;
-  prefs.bookmarks.push({
+  const st = bookState(prefs.currentBookId);
+  st.bookmarks = st.bookmarks || [];
+  st.bookmarks.push({
     id: Date.now() + '-' + Math.random().toString(36).slice(2, 7),
     page: pos.page,
     ratio: pos.ratio,
@@ -275,33 +358,105 @@ els.mark.addEventListener('click', () => {
   renderBookmarks();
 });
 
+async function openBook(id) {
+  const rec = await getBlob(id);
+  if (!rec) { alert('No se encontró el libro.'); return; }
+  const meta = await getMeta(id);
+  currentFileName = meta ? meta.name : 'Documento';
+  els.bookTitle.textContent = currentFileName;
+  els.bookTitle.title = currentFileName;
+  prefs.currentBookId = id;
+  savePrefs();
+  els.library.classList.remove('show');
+  els.reader.style.display = 'block';
+  await renderPdf(rec.buf, true);
+  renderBookmarks();
+}
+
+async function showLibrary() {
+  persistNow();
+  const books = await listBooks();
+  els.reader.style.display = 'none';
+  window.scrollTo(0, 0);
+  els.progress.style.width = '0';
+  els.library.classList.add('show');
+  renderLibrary(books);
+}
+function renderLibrary(books) {
+  const list = els.bookList;
+  list.innerHTML = '';
+  els.libEmpty.style.display = books.length ? 'none' : 'block';
+  books.forEach(b => {
+    const st = prefs.books[b.id] || { position: null, bookmarks: [] };
+    const page = st.position ? st.position.page : null;
+    const bmCount = (st.bookmarks || []).length;
+    const meta = page
+      ? `Pág. ${page}${bmCount ? ` · ${bmCount} marcador${bmCount > 1 ? 'es' : ''}` : ''}`
+      : 'Sin empezar';
+    const li = document.createElement('li');
+    li.className = 'book-item';
+    const open = document.createElement('button');
+    open.className = 'book-open';
+    open.innerHTML = `<span class="book-name">${escapeHtml(b.name)}</span><span class="book-meta">${meta}</span>`;
+    open.addEventListener('click', () => openBook(b.id));
+    const del = document.createElement('button');
+    del.className = 'book-del';
+    del.innerHTML = TRASH;
+    del.title = 'Eliminar libro';
+    del.addEventListener('click', async e => {
+      e.stopPropagation();
+      if (confirm(`¿Eliminar “${b.name}” de tu biblioteca?`)) {
+        await deleteBook(b.id);
+        if (prefs.books[b.id]) delete prefs.books[b.id];
+        if (prefs.currentBookId === b.id) prefs.currentBookId = null;
+        savePrefs();
+        showLibrary();
+      }
+    });
+    li.appendChild(open);
+    li.appendChild(del);
+    list.appendChild(li);
+  });
+}
+els.libraryBtn.addEventListener('click', showLibrary);
+
 els.fileInput.addEventListener('change', async e => {
   const file = e.target.files[0];
   if (!file) return;
+  const id = (crypto.randomUUID ? crypto.randomUUID() : 'b-' + Date.now() + '-' + Math.random().toString(36).slice(2, 7));
+  const buf = await file.arrayBuffer();
+  await saveBook(id, file.name, buf);
+  showToast(storageOk ? 'Libro guardado' : 'No se pudo guardar');
+  prefs.currentBookId = id;
+  if (!prefs.books[id]) prefs.books[id] = { position: null, bookmarks: [] };
+  savePrefs();
   currentFileName = file.name;
   els.bookTitle.textContent = file.name;
   els.bookTitle.title = file.name;
-  const buf = await file.arrayBuffer();
-  await savePdf(buf, { name: file.name, size: file.size, savedAt: Date.now() });
-  prefs.position = null;
-  savePrefs();
-  await renderPdf(buf, false);
+  els.library.classList.remove('show');
+  els.reader.style.display = 'block';
+  await renderPdf(buf, true);
+  renderBookmarks();
+  e.target.value = '';
 });
 
 async function init() {
   applyTheme();
   applyFont();
   renderBookmarks();
-  const saved = await loadPdf();
-  if (saved && saved.buf) {
-    currentFileName = (saved.meta && saved.meta.name) || 'Documento';
-    els.bookTitle.textContent = currentFileName;
-    els.bookTitle.title = currentFileName;
-    await renderPdf(saved.buf, true);
-  } else {
-    els.welcome.classList.add('show');
+  if (!storageOk) showStorageWarning();
+  const books = await listBooks();
+  if (prefs.position && !Object.keys(prefs.books).length) {
+    const leg = books.find(b => b.id.startsWith('legacy-'));
+    if (leg) {
+      prefs.books[leg.id] = { position: prefs.position, bookmarks: prefs.bookmarks || [] };
+      prefs.currentBookId = leg.id;
+      delete prefs.position;
+      delete prefs.bookmarks;
+      savePrefs();
+    }
   }
-  updateProgress();
+  await showLibrary();
 }
 
 init();
