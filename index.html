@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#faf9f7">
+  <title>Lector PDF</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="theme-light">
+
+  <div id="progress-bar" aria-hidden="true"></div>
+
+  <header id="toolbar">
+    <span id="book-title" class="book-title" title=""></span>
+
+    <label for="pdf-input" id="btn-upload" class="btn" title="Abrir PDF">
+      <svg viewBox="0 0 24 24" class="ic"><path d="M12 15V4m0 0L8 8m4-4l4 4"/><path d="M4 15v4a2 2 0 002 2h12a2 2 0 002-2v-4"/></svg>
+      <span class="lbl">Abrir</span>
+    </label>
+    <input id="pdf-input" type="file" accept="application/pdf" hidden>
+
+    <div class="sep" aria-hidden="true"></div>
+
+    <button id="btn-font-down" class="btn" title="Reducir texto">A<span class="sub">−</span></button>
+    <button id="btn-font-up" class="btn" title="Aumentar texto">A<span class="sub">+</span></button>
+
+    <div class="sep" aria-hidden="true"></div>
+
+    <button id="btn-theme" class="btn" title="Tema"></button>
+
+    <div class="sep" aria-hidden="true"></div>
+
+    <button id="btn-mark" class="btn" title="Marcar esta página">
+      <svg viewBox="0 0 24 24" class="ic"><path d="M6 4h12v16l-6-4-6 4z"/></svg>
+      <span class="lbl">Marcar</span>
+    </button>
+    <button id="btn-bookmarks" class="btn" title="Marcadores">
+      <svg viewBox="0 0 24 24" class="ic"><path d="M6 4h12v16l-6-4-6 4z"/><path d="M9 8h6M9 11h6"/></svg>
+      <span class="badge" id="bookmark-badge">0</span>
+      <span class="lbl">Marcadores</span>
+    </button>
+  </header>
+
+  <main>
+    <section id="welcome">
+      <svg viewBox="0 0 24 24" class="welcome-ic"><path d="M6 3h9l4 4v14a0 0 0 010 0H6a0 0 0 010 0z"/><path d="M14 3v5h5"/><path d="M9 13h6M9 16h6"/></svg>
+      <h1>Tu biblioteca, sin distracciones</h1>
+      <p>Sube un PDF para comenzar a leer. Tu progreso, tema y marcadores se guardan solos.</p>
+      <label for="pdf-input" class="cta">Abrir un PDF</label>
+    </section>
+
+    <div id="loading">Extrayendo texto del PDF…</div>
+    <article id="reader"></article>
+  </main>
+
+  <div id="drawer-overlay"></div>
+  <aside id="drawer" aria-label="Marcadores">
+    <div class="drawer-head">
+      <h2>Marcadores</h2>
+      <button id="drawer-close" class="icon-btn" title="Cerrar">
+        <svg viewBox="0 0 24 24" class="ic"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <ul id="bookmark-list"></ul>
+  </aside>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
