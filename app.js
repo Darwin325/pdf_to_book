@@ -18,6 +18,7 @@ const els = {
   libEmpty: document.getElementById('lib-empty'),
   fontDown: document.getElementById('btn-font-down'),
   fontUp: document.getElementById('btn-font-up'),
+  spacing: document.getElementById('btn-spacing'),
   theme: document.getElementById('btn-theme'),
   mark: document.getElementById('btn-mark'),
   bookmarks: document.getElementById('btn-bookmarks'),
@@ -43,7 +44,7 @@ let currentFileName = '';
 let storageOk = true;
 
 function loadPrefs() {
-  const def = { theme: 'light', fontSize: 19, currentBookId: null, books: {} };
+  const def = { theme: 'light', fontSize: 19, lineHeight: 1.7, currentBookId: null, books: {} };
   try {
     return Object.assign(def, JSON.parse(localStorage.getItem(PREFS_KEY)) || {});
   } catch (e) {
@@ -170,6 +171,10 @@ function applyTheme() {
 function applyFont() {
   document.documentElement.style.setProperty('--font-size', prefs.fontSize + 'px');
 }
+function applySpacing() {
+  document.documentElement.style.setProperty('--line-height', prefs.lineHeight);
+  els.spacing.title = 'Interlineado: ' + prefs.lineHeight;
+}
 
 function buildParagraphs(t) {
   let chunks = t.split(/\n\n+/).map(s => s.trim()).filter(Boolean);
@@ -277,6 +282,23 @@ function changeFont(delta) {
 }
 els.fontUp.addEventListener('click', () => changeFont(2));
 els.fontDown.addEventListener('click', () => changeFont(-2));
+
+const LH = [2.1, 1.9, 1.7, 1.5, 1.3];
+function currentLHIndex() {
+  let best = 0, bestD = Infinity;
+  LH.forEach((v, i) => {
+    const d = Math.abs(v - prefs.lineHeight);
+    if (d < bestD) { bestD = d; best = i; }
+  });
+  return best;
+}
+els.spacing.addEventListener('click', () => {
+  const pos = pageBlocks.length ? getPosition() : null;
+  prefs.lineHeight = LH[(currentLHIndex() + 1) % LH.length];
+  applySpacing();
+  savePrefs();
+  if (pos) requestAnimationFrame(() => restorePosition(pos, 'auto'));
+});
 
 els.theme.addEventListener('click', () => {
   prefs.theme = THEMES[(THEMES.indexOf(prefs.theme) + 1) % THEMES.length];
@@ -443,6 +465,7 @@ els.fileInput.addEventListener('change', async e => {
 async function init() {
   applyTheme();
   applyFont();
+  applySpacing();
   renderBookmarks();
   if (!storageOk) showStorageWarning();
   const books = await listBooks();

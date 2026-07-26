@@ -9,6 +9,7 @@
   --shadow: 0 10px 30px rgba(31, 32, 36, .12);
   --font: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
   --font-size: 19px;
+  --line-height: 1.7;
   --maxw: 42rem;
   --bar-h: 56px;
 }
@@ -122,7 +123,7 @@ body {
 .btn .sub { font-size: .72em; opacity: .7; }
 .btn .lbl { display: none; }
 
-#btn-font-down, #btn-font-up { font-weight: 600; min-width: 40px; }
+#btn-font-down, #btn-font-up, #btn-spacing { font-weight: 600; min-width: 40px; }
 
 .badge {
   position: absolute;
@@ -264,7 +265,7 @@ main {
   padding: 30px 0;
 }
 
-#reader { display: none; font-size: var(--font-size); }
+#reader { display: none; font-size: var(--font-size); line-height: var(--line-height); }
 
 .page-block {
   margin-bottom: 1.8em;
