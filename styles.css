@@ -2,7 +2,7 @@
   --bg: #faf9f7;
   --text: #1f2024;
   --muted: rgba(31, 32, 36, .55);
-  --bar-bg: rgba(250, 249, 247, .82);
+  --bar-bg: rgba(250, 249, 247, .94);
   --border: rgba(31, 32, 36, .1);
   --card: rgba(31, 32, 36, .045);
   --accent: #8a6d3b;
@@ -18,7 +18,7 @@ body.theme-sepia {
   --bg: #f4ecd8;
   --text: #5b4636;
   --muted: rgba(91, 70, 54, .55);
-  --bar-bg: rgba(244, 236, 216, .85);
+  --bar-bg: rgba(244, 236, 216, .95);
   --border: rgba(91, 70, 54, .15);
   --card: rgba(91, 70, 54, .06);
   --accent: #9c6b3f;
@@ -29,7 +29,7 @@ body.theme-dark {
   --bg: #16161a;
   --text: #e8e6e3;
   --muted: rgba(232, 230, 227, .55);
-  --bar-bg: rgba(22, 22, 26, .82);
+  --bar-bg: rgba(22, 22, 26, .95);
   --border: rgba(232, 230, 227, .14);
   --card: rgba(232, 230, 227, .06);
   --accent: #c9a36a;
@@ -48,7 +48,6 @@ body {
   font-size: var(--font-size);
   line-height: 1.72;
   -webkit-font-smoothing: antialiased;
-  text-rendering: optimizeLegibility;
   transition: background-color .35s ease, color .35s ease;
   padding-bottom: calc(var(--bar-h) + env(safe-area-inset-bottom) + 16px);
 }
@@ -58,10 +57,13 @@ body {
   position: fixed;
   top: 0; left: 0;
   height: 3px;
-  width: 0;
+  width: 100%;
+  transform: scaleX(0);
+  transform-origin: left center;
   background: var(--accent);
   z-index: 200;
-  transition: width .12s linear;
+  will-change: transform;
+  transition: transform .12s linear;
 }
 
 /* Toolbar (mobile: bottom bar) */
@@ -74,8 +76,6 @@ body {
   align-items: center;
   gap: 4px;
   background: var(--bar-bg);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
   border-top: 1px solid var(--border);
   z-index: 150;
 }
@@ -271,9 +271,11 @@ main {
   margin-bottom: 1.8em;
   position: relative;
   scroll-margin-top: 20px;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 900px;
 }
 
-.page-block p { margin: 0 0 1em; text-align: justify; hyphens: auto; }
+.page-block p { margin: 0 0 1em; text-align: left; }
 .page-block p:last-of-type { margin-bottom: 0; }
 
 .page-number {

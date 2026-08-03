@@ -40,6 +40,7 @@ const TRASH = '<svg viewBox="0 0 24 24" class="ic"><path d="M4 7h16M9 7V5h6v2M6 
 
 let prefs = loadPrefs();
 let pageBlocks = [];
+let pageOffsets = null;
 let currentFileName = '';
 let storageOk = true;
 
@@ -214,10 +215,16 @@ async function renderPdf(arrayBuffer, restore) {
       block.appendChild(num);
       els.reader.appendChild(block);
       pageBlocks.push(block);
+      if (i % 6 === 0) await new Promise(r => setTimeout(r));
     }
     if (restore && prefs.currentBookId) {
       const st = bookState(prefs.currentBookId);
-      if (st.position) requestAnimationFrame(() => restorePosition(st.position, 'auto'));
+      if (st.position) {
+        buildOffsets();
+        requestAnimationFrame(() => restorePosition(st.position, 'auto'));
+      }
+    } else {
+      buildOffsets();
     }
     updateProgress();
   } catch (e) {
@@ -228,36 +235,48 @@ async function renderPdf(arrayBuffer, restore) {
   }
 }
 
+function buildOffsets() {
+  pageOffsets = pageBlocks.map(b => ({ page: +b.dataset.page, top: b.offsetTop, height: b.offsetHeight || 1 }));
+}
 function getPosition() {
   const y = window.scrollY || document.documentElement.scrollTop;
-  let page = pageBlocks.length ? +pageBlocks[0].dataset.page : 0;
-  let ratio = 0;
-  for (const b of pageBlocks) {
-    const top = b.offsetTop, h = b.offsetHeight || 1;
-    if (y + 4 >= top) {
-      page = +b.dataset.page;
-      ratio = (y - top) / h;
+  if (!pageOffsets || !pageOffsets.length) return { page: pageBlocks.length ? +pageBlocks[0].dataset.page : 0, ratio: 0 };
+  let page = pageOffsets[0].page, ratio = 0;
+  for (const o of pageOffsets) {
+    if (y + 4 >= o.top) {
+      page = o.page;
+      ratio = (y - o.top) / o.height;
     } else break;
   }
   return { page, ratio: Math.max(0, Math.min(1, ratio)) };
 }
 function restorePosition(pos, behavior) {
   if (!pos) return;
-  const b = pageBlocks.find(x => +x.dataset.page === pos.page) || pageBlocks[0];
-  if (!b) return;
-  window.scrollTo({ top: b.offsetTop + (pos.ratio || 0) * b.offsetHeight, behavior: behavior || 'auto' });
+  const o = pageOffsets ? pageOffsets.find(x => x.page === pos.page) : null;
+  const top = o ? o.top : (pageBlocks.find(x => +x.dataset.page === pos.page) || pageBlocks[0]);
+  if (!top && !o) return;
+  const baseTop = o ? o.top : top.offsetTop;
+  const height = o ? o.height : (top.offsetHeight || 1);
+  window.scrollTo({ top: baseTop + (pos.ratio || 0) * height, behavior: behavior || 'auto' });
 }
 
 function updateProgress() {
-  if (els.reader.style.display === 'none') { els.progress.style.width = '0'; return; }
+  if (els.reader.style.display === 'none') { els.progress.style.transform = 'scaleX(0)'; return; }
   const h = document.documentElement.scrollHeight - window.innerHeight;
-  const p = h > 0 ? (window.scrollY / h) * 100 : 0;
-  els.progress.style.width = Math.min(100, Math.max(0, p)) + '%';
+  const p = h > 0 ? (window.scrollY / h) : 0;
+  els.progress.style.transform = 'scaleX(' + Math.min(1, Math.max(0, p)) + ')';
 }
 
 let scrollTimer = null;
+let ticking = false;
 function onScroll() {
-  updateProgress();
+  if (!ticking) {
+    ticking = true;
+    requestAnimationFrame(() => {
+      updateProgress();
+      ticking = false;
+    });
+  }
   if (scrollTimer) return;
   scrollTimer = setTimeout(() => {
     scrollTimer = null;
@@ -265,6 +284,7 @@ function onScroll() {
   }, 400);
 }
 window.addEventListener('scroll', onScroll, { passive: true });
+window.addEventListener('resize', () => requestAnimationFrame(buildOffsets));
 function persistNow() {
   if (els.reader.style.display === 'none' || !pageBlocks.length || !prefs.currentBookId) return;
   bookState(prefs.currentBookId).position = getPosition();
@@ -278,7 +298,7 @@ function changeFont(delta) {
   prefs.fontSize = Math.max(12, Math.min(32, prefs.fontSize + delta));
   applyFont();
   savePrefs();
-  if (pos) requestAnimationFrame(() => restorePosition(pos, 'auto'));
+  if (pos) requestAnimationFrame(() => { buildOffsets(); restorePosition(pos, 'auto'); });
 }
 els.fontUp.addEventListener('click', () => changeFont(2));
 els.fontDown.addEventListener('click', () => changeFont(-2));
@@ -297,7 +317,7 @@ els.spacing.addEventListener('click', () => {
   prefs.lineHeight = LH[(currentLHIndex() + 1) % LH.length];
   applySpacing();
   savePrefs();
-  if (pos) requestAnimationFrame(() => restorePosition(pos, 'auto'));
+  if (pos) requestAnimationFrame(() => { buildOffsets(); restorePosition(pos, 'auto'); });
 });
 
 els.theme.addEventListener('click', () => {
